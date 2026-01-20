@@ -1,0 +1,397 @@
+================================================================================
+        DOCUMENTACION TECNICA - SISTEMA DE ARCHIVOS POR SOCKET
+================================================================================
+
+INDICE
+------
+1. Introduccion
+2. Arquitectura del Sistema
+3. Componentes Principales
+4. Protocolo de Comunicacion
+5. Flujo de Datos
+6. Clases y Responsabilidades
+7. Patron Cliente-Servidor
+8. Manejo de Conexiones
+9. Serializacion de Objetos
+10. Interfaz Grafica (Swing)
+11. Hilos y Concurrencia
+12. Diagrama de Secuencia
+
+================================================================================
+1. INTRODUCCION
+================================================================================
+
+Este sistema implementa una arquitectura cliente-servidor utilizando sockets
+TCP/IP para permitir la gestion remota de archivos. El servidor expone un
+directorio y el cliente puede realizar operaciones CRUD (Crear, Leer, 
+Actualizar, Eliminar) sobre los archivos de forma remota.
+
+Tecnologias utilizadas:
+- Lenguaje: Java 8+
+- Comunicacion: java.net (Socket, ServerSocket)
+- Serializacion: java.io (ObjectInputStream, ObjectOutputStream)
+- Interfaz grafica: javax.swing (Swing)
+
+================================================================================
+2. ARQUITECTURA DEL SISTEMA
+================================================================================
+
+El sistema sigue el patron Cliente-Servidor tradicional:
+
+    +-------------------+         TCP/IP          +-------------------+
+    |                   |  <------------------->  |                   |
+    |     CLIENTE       |       Puerto 5000       |     SERVIDOR      |
+    |   (ClientGUI)     |                         |   (ServerGUI)     |
+    |                   |                         |                   |
+    +-------------------+                         +-------------------+
+           |                                              |
+           |                                              |
+    +------v------+                               +-------v-------+
+    |   Envia     |                               |   Procesa     |
+    |  Comandos   |                               |   Comandos    |
+    +-------------+                               +---------------+
+                                                         |
+                                                  +------v------+
+                                                  | Sistema de  |
+                                                  |  Archivos   |
+                                                  +-------------+
+
+================================================================================
+3. COMPONENTES PRINCIPALES
+================================================================================
+
+3.1 App.java (Lanzador)
+------------------------
+- Punto de entrada de la aplicacion
+- Muestra selector para elegir modo: Servidor o Cliente
+- Utiliza SwingUtilities.invokeLater() para thread-safety
+
+3.2 ServerGUI.java (Servidor)
+------------------------------
+- Crea un ServerSocket en el puerto especificado
+- Acepta conexiones entrantes en un hilo separado
+- Por cada cliente, crea un nuevo hilo (ClientHandler)
+- Procesa comandos y opera sobre el sistema de archivos
+- Muestra log de todas las operaciones
+
+3.3 ClientGUI.java (Cliente)
+-----------------------------
+- Se conecta al servidor mediante Socket
+- Envia comandos serializados (FileProtocol)
+- Recibe respuestas y actualiza la interfaz
+- Proporciona interfaz para operaciones de archivos
+
+3.4 FileProtocol.java (Protocolo)
+----------------------------------
+- Clase serializable para comunicacion
+- Define comandos y respuestas del protocolo
+- Encapsula datos de las operaciones
+
+================================================================================
+4. PROTOCOLO DE COMUNICACION
+================================================================================
+
+El protocolo utiliza objetos serializados de la clase FileProtocol.
+Los mensajes se envian como objetos Java a traves de ObjectOutputStream
+y se reciben con ObjectInputStream.
+
+4.1 Comandos del Cliente al Servidor:
+--------------------------------------
+| Comando      | Descripcion                    | Parametros        |
+|--------------|--------------------------------|-------------------|
+| LIST         | Listar archivos del servidor   | Ninguno           |
+| READ         | Leer contenido de un archivo   | fileName          |
+| CREATE       | Crear un nuevo archivo         | fileName, content |
+| WRITE        | Escribir en un archivo         | fileName, content |
+| MODIFY       | Modificar archivo existente    | fileName, content |
+| DELETE       | Eliminar un archivo            | fileName          |
+| DISCONNECT   | Cerrar la conexion             | Ninguno           |
+
+4.2 Respuestas del Servidor al Cliente:
+----------------------------------------
+| Respuesta    | Descripcion                    |
+|--------------|--------------------------------|
+| OK           | Operacion exitosa              |
+| ERROR        | Ocurrio un error               |
+| CONTENT      | Contiene contenido de archivo  |
+| FILELIST     | Contiene lista de archivos     |
+
+4.3 Estructura del objeto FileProtocol:
+----------------------------------------
+    public class FileProtocol implements Serializable {
+        private String command;      // Comando a ejecutar
+        private String fileName;     // Nombre del archivo
+        private String content;      // Contenido del archivo
+        private String response;     // Tipo de respuesta
+        private String[] fileList;   // Lista de archivos
+    }
+
+================================================================================
+5. FLUJO DE DATOS
+================================================================================
+
+5.1 Conexion Inicial:
+----------------------
+    Cliente                              Servidor
+       |                                     |
+       |  1. new Socket(ip, port)            |
+       |------------------------------------>|
+       |                                     | 2. serverSocket.accept()
+       |                                     |
+       |  3. ObjectOutputStream/InputStream  |
+       |<----------------------------------->|
+       |                                     |
+       |  CONEXION ESTABLECIDA               |
+       |                                     |
+
+5.2 Operacion de Lectura de Archivo:
+-------------------------------------
+    Cliente                              Servidor
+       |                                     |
+       |  1. FileProtocol(READ, "file.txt")  |
+       |------------------------------------>|
+       |                                     | 2. Lee archivo del disco
+       |                                     |
+       |  3. FileProtocol(OK, content)       |
+       |<------------------------------------|
+       |                                     |
+       |  4. Muestra contenido en editor     |
+       |                                     |
+
+================================================================================
+6. CLASES Y RESPONSABILIDADES
+================================================================================
+
+6.1 ServerGUI
+--------------
+Metodos principales:
+- initComponents(): Construye la interfaz grafica
+- startServer(): Inicia el ServerSocket y hilo de escucha
+- stopServer(): Cierra el servidor y libera recursos
+- log(): Registra mensajes en el area de log
+
+Clase interna ClientHandler:
+- Implementa Runnable para ejecucion en hilo separado
+- processRequest(): Procesa cada comando recibido
+- Realiza operaciones de E/S sobre archivos
+
+6.2 ClientGUI
+--------------
+Metodos principales:
+- connect(): Establece conexion con el servidor
+- disconnect(): Cierra la conexion
+- refreshFileList(): Solicita lista de archivos
+- openSelectedFile(): Lee un archivo del servidor
+- saveFile(): Crea o modifica un archivo
+- deleteSelectedFile(): Elimina un archivo
+- handleConnectionError(): Maneja errores de conexion
+
+6.3 FileProtocol
+-----------------
+- Constructor con diferentes parametros para cada tipo de mensaje
+- Getters y setters para todos los campos
+- Implementa Serializable para transmision por red
+
+================================================================================
+7. PATRON CLIENTE-SERVIDOR
+================================================================================
+
+Este sistema implementa el patron clasico Cliente-Servidor:
+
+SERVIDOR:
+- Rol pasivo: espera conexiones
+- Provee servicios (gestion de archivos)
+- Puede atender multiples clientes
+- Mantiene el estado (archivos en disco)
+
+CLIENTE:
+- Rol activo: inicia la conexion
+- Solicita servicios
+- Presenta interfaz al usuario
+- No mantiene estado persistente
+
+Ventajas de esta arquitectura:
+- Centralizacion de datos
+- Facil mantenimiento
+- Escalabilidad (multiples clientes)
+- Separacion de responsabilidades
+
+================================================================================
+8. MANEJO DE CONEXIONES
+================================================================================
+
+8.1 En el Servidor:
+--------------------
+    // Hilo principal acepta conexiones
+    serverThread = new Thread(() -> {
+        while (isRunning) {
+            Socket clientSocket = serverSocket.accept();  // Bloquea
+            new Thread(new ClientHandler(clientSocket)).start();
+        }
+    });
+
+    - ServerSocket.accept() es bloqueante
+    - Cada cliente se maneja en un hilo independiente
+    - Permite multiples clientes simultaneos
+
+8.2 En el Cliente:
+-------------------
+    socket = new Socket(ip, port);
+    out = new ObjectOutputStream(socket.getOutputStream());
+    in = new ObjectInputStream(socket.getInputStream());
+
+    - Conexion sincrona (bloquea hasta conectar o timeout)
+    - Streams bidireccionales para comunicacion
+    - Un cliente = una conexion = un socket
+
+================================================================================
+9. SERIALIZACION DE OBJETOS
+================================================================================
+
+Java permite enviar objetos completos a traves de la red mediante
+serializacion:
+
+ENVIO (Cliente):
+    FileProtocol request = new FileProtocol(CMD_READ_FILE, "archivo.txt");
+    out.writeObject(request);
+    out.flush();
+
+RECEPCION (Servidor):
+    FileProtocol request = (FileProtocol) in.readObject();
+    String comando = request.getCommand();
+
+Requisitos:
+- La clase debe implementar java.io.Serializable
+- Debe tener un serialVersionUID
+- Todos los campos deben ser serializables
+
+Ventajas:
+- Envio de objetos complejos
+- No requiere parsear strings
+- Tipado fuerte
+
+================================================================================
+10. INTERFAZ GRAFICA (SWING)
+================================================================================
+
+10.1 Componentes utilizados:
+-----------------------------
+- JFrame: Ventana principal
+- JPanel: Contenedores con layouts
+- JButton: Botones de accion
+- JTextField: Campos de texto
+- JTextArea: Area de texto multilinea
+- JTable: Tabla de archivos
+- JScrollPane: Barras de desplazamiento
+- JSplitPane: Divisor redimensionable
+- JFileChooser: Selector de directorios
+- JOptionPane: Dialogos
+
+10.2 Layouts utilizados:
+-------------------------
+- BorderLayout: Distribucion Norte/Sur/Este/Oeste/Centro
+- GridBagLayout: Cuadricula flexible
+- FlowLayout: Flujo horizontal
+- GridLayout: Cuadricula uniforme
+
+10.3 Thread Safety en Swing:
+-----------------------------
+    SwingUtilities.invokeLater(() -> {
+        logArea.append(mensaje);
+    });
+
+    - Swing no es thread-safe
+    - Todas las actualizaciones de UI deben hacerse en el EDT
+    - EDT = Event Dispatch Thread
+
+================================================================================
+11. HILOS Y CONCURRENCIA
+================================================================================
+
+El sistema utiliza multiples hilos:
+
+1. HILO PRINCIPAL (Main Thread)
+   - Inicia la aplicacion
+   - Crea la interfaz inicial
+
+2. EDT (Event Dispatch Thread)
+   - Maneja eventos de la interfaz
+   - Actualiza componentes graficos
+
+3. HILO DEL SERVIDOR (Server Thread)
+   - Ejecuta serverSocket.accept() en bucle
+   - Acepta nuevas conexiones
+
+4. HILOS DE CLIENTES (Client Handler Threads)
+   - Un hilo por cada cliente conectado
+   - Procesa comandos del cliente
+   - Opera sobre archivos
+
+Diagrama de hilos en el servidor:
+
+    Main Thread
+         |
+         v
+    [Inicia GUI]
+         |
+    +----+----+
+    |         |
+    v         v
+   EDT    Server Thread
+    |         |
+    |    +----+----+----+
+    |    |    |    |    |
+    |    v    v    v    v
+    | Handler Handler Handler ...
+    |   (C1)  (C2)  (C3)
+    v
+  [Log]
+
+================================================================================
+12. DIAGRAMA DE SECUENCIA - OPERACION COMPLETA
+================================================================================
+
+Ejemplo: Cliente lee un archivo del servidor
+
+    Usuario     ClientGUI      Socket       ServerGUI     ClientHandler    FileSystem
+       |            |            |              |              |              |
+       | 1.Click    |            |              |              |              |
+       |  "Abrir"   |            |              |              |              |
+       |----------->|            |              |              |              |
+       |            |            |              |              |              |
+       |            | 2.Crear    |              |              |              |
+       |            | FileProtocol              |              |              |
+       |            |----------->|              |              |              |
+       |            |            |              |              |              |
+       |            |            | 3.Enviar     |              |              |
+       |            |            | objeto       |              |              |
+       |            |            |------------->|              |              |
+       |            |            |              |              |              |
+       |            |            |              | 4.Despachar  |              |
+       |            |            |              |------------->|              |
+       |            |            |              |              |              |
+       |            |            |              |              | 5.Leer       |
+       |            |            |              |              | archivo      |
+       |            |            |              |              |------------->|
+       |            |            |              |              |              |
+       |            |            |              |              | 6.Contenido  |
+       |            |            |              |              |<-------------|
+       |            |            |              |              |              |
+       |            |            |              | 7.Respuesta  |              |
+       |            |            |              |<-------------|              |
+       |            |            |              |              |              |
+       |            |            | 8.Objeto     |              |              |
+       |            |            | respuesta    |              |              |
+       |            |            |<-------------|              |              |
+       |            |            |              |              |              |
+       |            | 9.Procesar |              |              |              |
+       |            |<-----------|              |              |              |
+       |            |            |              |              |              |
+       | 10.Mostrar |            |              |              |              |
+       |  contenido |            |              |              |              |
+       |<-----------|            |              |              |              |
+       |            |            |              |              |              |
+
+================================================================================
+                              FIN DEL DOCUMENTO
+================================================================================
